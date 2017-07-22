@@ -13,8 +13,8 @@ def discount(x, gamma):
 
 def process_rollout(rollout, gamma, lambda_=1.0):
     """
-given a rollout, compute its returns and the advantage
-"""
+    Given a rollout, compute its returns and the advantage
+    """
     batch_si = np.asarray(rollout.states)
     batch_a = np.asarray(rollout.actions)
     rewards = np.asarray(rollout.rewards)
@@ -28,15 +28,16 @@ given a rollout, compute its returns and the advantage
     batch_adv = discount(delta_t, gamma * lambda_)
 
     features = rollout.features[0]
-    return Batch(batch_si, batch_a, batch_adv, batch_r, rollout.terminal, features)
+    return Batch(batch_si, batch_a, batch_adv, batch_r, rollout.terminal,
+                 features)
 
-Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
+Batch = namedtuple('Batch', ['si', 'a', 'adv', 'r', 'terminal', 'features'])
 
 class PartialRollout(object):
     """
-a piece of a complete rollout.  We run our agent, and process its experience
-once it has processed enough steps.
-"""
+    A piece of a complete rollout. We run our agent, and process its experience
+    once it has processed enough steps.
+    """
     def __init__(self):
         self.states = []
         self.actions = []
@@ -56,12 +57,15 @@ once it has processed enough steps.
 
 def env_runner(env, policy, num_local_steps, summary_writer, render):
     """
-The logic of the thread runner.  In brief, it constantly keeps on running
-the policy, and as long as the rollout exceeds a certain length, the thread
-runner appends the policy to the queue.
-"""
+    The logic of the thread runner. In brief, it constantly keeps on running
+    the policy, and as long as the rollout exceeds a certain length, the thread
+    runner appends the policy to the queue.
+    """
     last_state = env.reset()
     last_features = policy.get_initial_features()
+    timestep_limit = env.spec.tags.get(
+            'wrapper_config.TimeLimit.max_episode_steps')
+    semantics_autoreset = env.metadata.get('semantics.autoreset')
     length = 0
     rewards = 0
 
@@ -78,7 +82,8 @@ runner appends the policy to the queue.
                 env.render()
 
             # collect the experience
-            rollout.add(last_state, action, reward, value_, terminal, last_features)
+            rollout.add(last_state, action, reward, value_, terminal,
+                        last_features)
             length += 1
             rewards += reward
 
@@ -92,13 +97,13 @@ runner appends the policy to the queue.
                 summary_writer.add_summary(summary, policy.global_step.eval())
                 summary_writer.flush()
 
-            timestep_limit = env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps')
             if terminal or length >= timestep_limit:
                 terminal_end = True
-                if length >= timestep_limit or not env.metadata.get('semantics.autoreset'):
+                if length >= timestep_limit or not semantics_autoreset:
                     last_state = env.reset()
                 last_features = policy.get_initial_features()
-                print("Episode finished. Sum of rewards: %d. Length: %d" % (rewards, length))
+                print("Episode finished. Sum of rewards: {} Length: {}".format(
+                    rewards, length))
                 length = 0
                 rewards = 0
                 break
@@ -112,38 +117,47 @@ runner appends the policy to the queue.
 class A3C(object):
     def __init__(self, env, task, visualise):
         """
-An implementation of the A3C algorithm that is reasonably well-tuned for the VNC environments.
-Below, we will have a modest amount of complexity due to the way TensorFlow handles data parallelism.
-But overall, we'll define the model, specify its inputs, and describe how the policy gradients step
-should be computed.
-"""
+        An implementation of the A3C algorithm that is reasonably well-tuned
+        for the VNC environments. Below, we will have a modest amount of
+        complexity due to the way TensorFlow handles data parallelism. But
+        overall, we'll define the model, specify its inputs, and describe how
+        the policy gradients step should be computed.
+        """
 
         self.env = env
         self.task = task
         self.visualise = visualise
-        worker_device = "/job:worker/task:{}/cpu:0".format(task)
-        with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
-            with tf.variable_scope("global"):
-                self.network = LSTMPolicy(env.observation_space.shape, env.action_space.n)
-                self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
-                                                   trainable=False)
+        obs_shape = env.observation_space.shape
+        worker_device = '/job:worker/task:{}/cpu:0'.format(task)
+        with tf.device(tf.train.replica_device_setter(1,
+                worker_device=worker_device)):
+            with tf.variable_scope('global'):
+                self.network = LSTMPolicy(obs_shape,
+                                          env.action_space.n)
+                self.global_step = tf.get_variable('global_step', [], tf.int32,
+                        initializer=tf.constant_initializer(0, dtype=tf.int32),
+                        trainable=False)
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
-                self.local_network = pi = LSTMPolicy(env.observation_space.shape, env.action_space.n)
+                self.local_network = pi = LSTMPolicy(obs_shape,
+                                                     env.action_space.n)
                 pi.global_step = self.global_step
 
-            self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
+            self.ac = tf.placeholder(tf.float32, [None, env.action_space.n],
+                                     name="ac")
             self.adv = tf.placeholder(tf.float32, [None], name="adv")
             self.r = tf.placeholder(tf.float32, [None], name="r")
 
             log_prob_tf = tf.nn.log_softmax(pi.logits)
             prob_tf = tf.nn.softmax(pi.logits)
 
-            # the "policy gradients" loss:  its derivative is precisely the policy gradient
-            # notice that self.ac is a placeholder that is provided externally.
-            # adv will contain the advantages, as calculated in process_rollout
-            pi_loss = - tf.reduce_sum(tf.reduce_sum(log_prob_tf * self.ac, [1]) * self.adv)
+            # the "policy gradients" loss: its derivative is precisely the
+            # policy gradient notice that self.ac is a placeholder that is
+            # provided externally. adv will contain the advantages, as
+            # calculated in process_rollout
+            pi_loss = - tf.reduce_sum(tf.reduce_sum(log_prob_tf * self.ac, [1])
+                                      * self.adv)
 
             # loss of value function
             vf_loss = 0.5 * tf.reduce_sum(tf.square(pi.vf - self.r))
@@ -159,20 +173,23 @@ should be computed.
             tf.summary.scalar("model/entropy", entropy / bs)
             tf.summary.image("model/state", pi.x)
             tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
-            tf.summary.scalar("model/var_global_norm", tf.global_norm(pi.var_list))
+            tf.summary.scalar("model/var_global_norm",
+                              tf.global_norm(pi.var_list))
             self.summary_op = tf.summary.merge_all()
 
             grads, _ = tf.clip_by_global_norm(grads, 40.0)
 
             # copy weights from the parameter server to the local model
-            self.sync = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list, self.network.var_list)])
+            self.sync = tf.group(*[v1.assign(v2) for v1, v2 in
+                                   zip(pi.var_list, self.network.var_list)])
 
             grads_and_vars = list(zip(grads, self.network.var_list))
             inc_step = self.global_step.assign_add(tf.shape(pi.x)[0])
 
             # each worker has a different set of adam optimizer parameters
             opt = tf.train.AdamOptimizer(1e-4)
-            self.train_op = tf.group(opt.apply_gradients(grads_and_vars), inc_step)
+            self.train_op = tf.group(opt.apply_gradients(grads_and_vars),
+                                     inc_step)
             self.summary_writer = None
             self.local_steps = 0
 
@@ -186,10 +203,10 @@ should be computed.
 
     def process(self, sess):
         """
-process grabs a rollout that's been produced by the thread runner,
-and updates the parameters.  The update is then sent to the parameter
-server.
-"""
+        process grabs a rollout that's been produced by the thread runner, and
+        updates the parameters. The update is then sent to the parameter
+        server.
+        """
 
         sess.run(self.sync)  # copy weights from shared to local
         rollout = next(self.rollout_provider)
@@ -214,6 +231,7 @@ server.
         fetched = sess.run(fetches, feed_dict=feed_dict)
 
         if should_compute_summary:
-            self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
+            self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]),
+                                                                  fetched[-1])
             self.summary_writer.flush()
         self.local_steps += 1
