@@ -2,13 +2,13 @@
 import cv2
 import go_vncdriver
 import tensorflow as tf
-import argparse
 import logging
 import sys, signal
 import time
 import os
 from a3c import A3C
 from envs import create_env
+from arguments import args
 import distutils.version
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
@@ -108,26 +108,9 @@ More tensorflow setup for data parallelism
 
 def main(_):
     """
-Setting up Tensorflow for data parallel work
-"""
+    Setting up Tensorflow for data parallel work
+    """
 
-    parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('-v', '--verbose', action='count', dest='verbosity', default=0, help='Set verbosity.')
-    parser.add_argument('--task', default=0, type=int, help='Task index')
-    parser.add_argument('--job-name', default="worker", help='worker or ps')
-    parser.add_argument('--num-workers', default=1, type=int, help='Number of workers')
-    parser.add_argument('--log-dir', default="/tmp/pong", help='Log directory path')
-    parser.add_argument('--env-id', default="PongDeterministic-v3", help='Environment id')
-    parser.add_argument('-r', '--remotes', default=None,
-                        help='References to environments to create (e.g. -r 20), '
-                             'or the address of pre-existing VNC servers and '
-                             'rewarders to use (e.g. -r vnc://localhost:5900+15900,vnc://localhost:5901+15901)')
-
-    # Add visualisation argument
-    parser.add_argument('--visualise', action='store_true',
-                        help="Visualise the gym environment by running env.render() between each timestep")
-
-    args = parser.parse_args()
     spec = cluster_spec(args.num_workers, 1)
     cluster = tf.train.ClusterSpec(spec).as_cluster_def()
 
