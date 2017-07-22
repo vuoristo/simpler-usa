@@ -65,44 +65,6 @@ once it has processed enough steps.
         self.terminal = other.terminal
         self.features.extend(other.features)
 
-class RunnerThread(threading.Thread):
-    """
-One of the key distinctions between a normal environment and a universe environment
-is that a universe environment is _real time_.  This means that there should be a thread
-that would constantly interact with the environment and tell it what to do.  This thread is here.
-"""
-    def __init__(self, env, policy, num_local_steps, visualise):
-        threading.Thread.__init__(self)
-        self.queue = queue.Queue(5)
-        self.num_local_steps = num_local_steps
-        self.env = env
-        self.last_features = None
-        self.policy = policy
-        self.daemon = True
-        self.sess = None
-        self.summary_writer = None
-        self.visualise = visualise
-
-    def start_runner(self, sess, summary_writer):
-        self.sess = sess
-        self.summary_writer = summary_writer
-        self.start()
-
-    def run(self):
-        with self.sess.as_default():
-            self._run()
-
-    def _run(self):
-        rollout_provider = env_runner(self.env, self.policy, self.num_local_steps, self.summary_writer, self.visualise)
-        while True:
-            # the timeout variable exists because apparently, if one worker dies, the other workers
-            # won't die with it, unless the timeout is set to some large number.  This is an empirical
-            # observation.
-
-            self.queue.put(next(rollout_provider), timeout=600.0)
-
-
-
 def env_runner(env, policy, num_local_steps, summary_writer, render):
     """
 The logic of the thread runner.  In brief, it constantly keeps on running
@@ -169,6 +131,7 @@ should be computed.
 
         self.env = env
         self.task = task
+        self.visualise = visualise
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
@@ -200,13 +163,6 @@ should be computed.
             bs = tf.to_float(tf.shape(pi.x)[0])
             self.loss = pi_loss + 0.5 * vf_loss - entropy * 0.01
 
-            # 20 represents the number of "local steps":  the number of timesteps
-            # we run the policy before we update the parameters.
-            # The larger local steps is, the lower is the variance in our policy gradients estimate
-            # on the one hand;  but on the other hand, we get less frequent parameter updates, which
-            # slows down learning.  In this code, we found that making local steps be much
-            # smaller than 20 makes the algorithm more difficult to tune and to get to work.
-            self.runner = RunnerThread(env, pi, 20, visualise)
 
 
             grads = tf.gradients(self.loss, pi.var_list)
@@ -244,20 +200,12 @@ should be computed.
             self.local_steps = 0
 
     def start(self, sess, summary_writer):
-        self.runner.start_runner(sess, summary_writer)
         self.summary_writer = summary_writer
-
-    def pull_batch_from_queue(self):
-        """
-self explanatory:  take a rollout from the queue of the thread runner.
-"""
-        rollout = self.runner.queue.get(timeout=600.0)
-        while not rollout.terminal:
-            try:
-                rollout.extend(self.runner.queue.get_nowait())
-            except queue.Empty:
-                break
-        return rollout
+        self.rollout_provider = env_runner(self.env,
+                                           self.local_network,
+                                           20, #TODO: Move to args
+                                           self.summary_writer,
+                                           self.visualise)
 
     def process(self, sess):
         """
@@ -267,7 +215,7 @@ server.
 """
 
         sess.run(self.sync)  # copy weights from shared to local
-        rollout = self.pull_batch_from_queue()
+        rollout = next(self.rollout_provider)
         batch = process_rollout(rollout, gamma=0.99, lambda_=1.0)
 
         should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
