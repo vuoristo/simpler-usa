@@ -54,16 +54,6 @@ once it has processed enough steps.
         self.terminal = terminal
         self.features += [features]
 
-    def extend(self, other):
-        assert not self.terminal
-        self.states.extend(other.states)
-        self.actions.extend(other.actions)
-        self.rewards.extend(other.rewards)
-        self.values.extend(other.values)
-        self.r = other.r
-        self.terminal = other.terminal
-        self.features.extend(other.features)
-
 def env_runner(env, policy, num_local_steps, summary_writer, render):
     """
 The logic of the thread runner.  In brief, it constantly keeps on running
