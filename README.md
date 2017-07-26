@@ -1,13 +1,13 @@
 # Simpler universe-starter-agent
 
 The codebase implements an agent that can solve a number of `gym` environments. It is based on [universe-starter-agent](https://github.com/openai/universe-starter-agent).
-It contains a basic implementation of the [A3C algorithm](https://arxiv.org/abs/1602.01783), adapted for real-time environments.
+It contains a basic implementation of the [A3C algorithm](https://arxiv.org/abs/1602.01783).
 
 # Dependencies
 
 * Python 2.7 or 3.5
 * [six](https://pypi.python.org/pypi/six) (for py2/3 compatibility)
-* [TensorFlow](https://www.tensorflow.org/) >=1.0
+* [TensorFlow](https://www.tensorflow.org/) >= 1.2
 * [tmux](https://tmux.github.io/) (the start script opens up a tmux session with multiple windows)
 * [htop](https://hisham.hm/htop/) (shown in one of the tmux windows)
 * [gym](https://pypi.python.org/pypi/gym)
@@ -20,7 +20,7 @@ It contains a basic implementation of the [A3C algorithm](https://arxiv.org/abs/
 
 * No universe environments. Supporting universe adds complexity and slows down experimentation with simpler Atari or other environments.
 * Collect hyperparameters to cli arguments.
-* No support for tf == 0.12
+* No support for tf < 1.2
 * Style changed to closer match PEP 8
 
 # Getting Started
