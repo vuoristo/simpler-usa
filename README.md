@@ -70,7 +70,7 @@ Add '--visualise' toggle if you want to visualise the worker using env.render() 
 
 `python train.py --num-workers 2 --env-id PongDeterministic-v4 --log-dir /tmp/pong --visualise`
 
-![pong](https://github.com/vuoristo/universe-starter-agent/raw/master/imgs/tb_pong.png "Pong")
+![pong](https://github.com/vuoristo/simpler-usa/raw/master/imgs/tb_pong.png "Pong")
 
 For best performance, it is recommended for the number of workers to not exceed available number of CPU cores.
 
